@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>医院规划测算计算器 (Liquid Glass Design)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Tailwind Config for Custom Animations & Colors -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'fadeIn': 'fadeIn 0.5s ease-out forwards',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Custom Scrollbar for nicer look */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569; 
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 transition-colors duration-500">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Icons Adapter ---
+        // 将 Lucide 全局对象转换为 React 组件
+        const LucideIcon = ({ name, size = 24, className = "", ...props }) => {
+            const iconName = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+            
+            useEffect(() => {
+                lucide.createIcons();
+            }, [name]);
+
+            return <i data-lucide={iconName} width={size} height={size} className={className} {...props}></i>;
+        };
+
+        // 映射原有组件名
+        const Calculator = (p) => <LucideIcon name="Calculator" {...p} />;
+        const Activity = (p) => <LucideIcon name="Activity" {...p} />;
+        const Bed = (p) => <LucideIcon name="Bed" {...p} />;
+        const Layout = (p) => <LucideIcon name="Layout" {...p} />;
+        const Building2 = (p) => <LucideIcon name="Building2" {...p} />;
+        const Info = (p) => <LucideIcon name="Info" {...p} />;
+        const Users = (p) => <LucideIcon name="Users" {...p} />;
+        const Stethoscope = (p) => <LucideIcon name="Stethoscope" {...p} />;
+        const ArrowRight = (p) => <LucideIcon name="ArrowRight" {...p} />;
+        const X = (p) => <LucideIcon name="X" {...p} />;
+        const Sun = (p) => <LucideIcon name="Sun" {...p} />;
+        const Moon = (p) => <LucideIcon name="Moon" {...p} />;
+        const Monitor = (p) => <LucideIcon name="Monitor" {...p} />;
+        const Check = (p) => <LucideIcon name="Check" {...p} />;
+
+        // --- Components ---
+
+        const GlassCard = ({ children, className = "" }) => (
+            <div className={`
+                relative overflow-hidden rounded-2xl border transition-all duration-300
+                bg-white/60 dark:bg-slate-900/60 
+                backdrop-blur-xl 
+                border-white/40 dark:border-white/10
+                shadow-lg dark:shadow-black/20
+                ${className}
+            `}>
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-50 dark:opacity-20 pointer-events-none" />
+                {children}
+            </div>
+        );
+
+        const SectionHeader = ({ icon: Icon, title, description }) => (
+            <div className="flex items-start gap-4 mb-6 border-b border-slate-200/50 dark:border-slate-700/50 pb-4">
+                <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-xl shadow-lg shadow-blue-500/30 mt-1">
+                    <Icon size={24} />
+                </div>
+                <div>
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{title}</h2>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{description}</p>
+                </div>
+            </div>
+        );
+
+        const FormulaTag = ({ children }) => (
+            <div className="inline-flex items-center gap-1 mt-2 px-2.5 py-1 
+                bg-slate-100/50 dark:bg-slate-800/50 
+                border border-slate-200/50 dark:border-slate-700/50 
+                rounded-md text-[11px] font-mono text-slate-500 dark:text-slate-400 leading-tight backdrop-blur-sm">
+                <span className="font-serif italic text-slate-400 dark:text-slate-500">fx:</span> {children}
+            </div>
+        );
+
+        const InputGroup = ({ label, value, onChange, unit, hint, min, max, step = 1 }) => (
+            <div className="mb-5 group relative z-10">
+                <div className="flex justify-between mb-1.5 px-1">
+                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{label}</label>
+                </div>
+                <div className="relative">
+                    <input
+                        type="number"
+                        value={value}
+                        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+                        className="w-full px-4 py-2.5 
+                        bg-white/50 dark:bg-slate-800/50 
+                        border border-slate-200/60 dark:border-slate-700/60 
+                        rounded-xl backdrop-blur-sm
+                        focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 
+                        text-slate-900 dark:text-white font-medium
+                        shadow-sm transition-all duration-200
+                        hover:bg-white/80 dark:hover:bg-slate-800/80"
+                        min={min}
+                        max={max}
+                        step={step}
+                    />
+                    {unit && (
+                        <span className="absolute right-4 top-2.5 text-sm text-slate-400 dark:text-slate-500 pointer-events-none font-medium">
+                            {unit}
+                        </span>
+                    )}
+                </div>
+                {hint && <div className="text-xs text-slate-500 dark:text-slate-500 italic mt-1.5 px-1">{hint}</div>}
+            </div>
+        );
+
+        const ResultBox = ({ label, value, subtext, highlight = false, formula }) => (
+            <div className={`p-5 rounded-xl border flex flex-col justify-between transition-all duration-300 
+                ${highlight 
+                ? 'bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-900/30 dark:to-indigo-900/30 border-blue-200/60 dark:border-blue-700/50 shadow-blue-200/20' 
+                : 'bg-white/40 dark:bg-slate-800/40 border-slate-200/50 dark:border-slate-700/50'
+                } backdrop-blur-md`}>
+                <div>
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        {label}
+                    </div>
+                    <div className={`text-3xl font-bold tracking-tight mb-1
+                        ${highlight ? 'text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                        {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : value}
+                        {subtext && <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-2 align-baseline text-black dark:text-white">{subtext}</span>}
+                    </div>
+                </div>
+                {formula && <FormulaTag>{formula}</FormulaTag>}
+            </div>
+        );
+
+        const ThemeToggle = ({ mode, setMode }) => {
+            const options = [
+                { key: 'light', icon: Sun, label: 'Light' },
+                { key: 'dark', icon: Moon, label: 'Dark' },
+                { key: 'system', icon: Monitor, label: 'Auto' },
+            ];
+
+            return (
+                <div className="flex bg-slate-200/50 dark:bg-slate-800/50 p-1 rounded-full backdrop-blur-md border border-slate-200/50 dark:border-slate-700/50">
+                    {options.map((opt) => (
+                        <button
+                            key={opt.key}
+                            onClick={() => setMode(opt.key)}
+                            className={`relative p-2 rounded-full transition-all duration-300 ${
+                                mode === opt.key 
+                                ? 'text-blue-600 dark:text-blue-400 shadow-sm bg-white dark:bg-slate-700' 
+                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                            }`}
+                            title={opt.label}
+                        >
+                            <opt.icon size={16} />
+                        </button>
+                    ))}
+                </div>
+            );
+        };
+
+        // --- Main App Logic ---
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('outpatient');
+            
+            // Theme State
+            const [themeMode, setThemeMode] = useState('system'); // 'light', 'dark', 'system'
+            const [isDark, setIsDark] = useState(false);
+
+            // Theme Logic
+            useEffect(() => {
+                const checkSystem = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+                
+                const applyTheme = () => {
+                    let dark = false;
+                    if (themeMode === 'system') {
+                        dark = checkSystem();
+                    } else {
+                        dark = themeMode === 'dark';
+                    }
+                    setIsDark(dark);
+                    
+                    // Apply to html root for global styles
+                    if (dark) {
+                        document.documentElement.classList.add('dark');
+                    } else {
+                        document.documentElement.classList.remove('dark');
+                    }
+                };
+
+                applyTheme();
+                const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+                const handler = () => { if (themeMode === 'system') applyTheme(); };
+                mediaQuery.addEventListener('change', handler);
+                return () => mediaQuery.removeEventListener('change', handler);
+            }, [themeMode]);
+
+            // --- Global Calculation State ---
+            const [totalBeds, setTotalBeds] = useState(1000);
+
+            // --- Outpatient State ---
+            const [outpatientRatio, setOutpatientRatio] = useState(3);
+            const [doctorHours, setDoctorHours] = useState(7);
+            const [patientsPerHour, setPatientsPerHour] = useState(4);
+            const [deptRatios, setDeptRatios] = useState({
+                internal: 17, surgery: 14, obgyn: 12, pediatrics: 12, ent: 9
+            });
+
+            // --- Emergency State ---
+            const [emergToOutpatientRatio, setEmergToOutpatientRatio] = useState(10);
+            const [emergRoomCapacity, setEmergRoomCapacity] = useState(50);
+            const [drConfig, setDrConfig] = useState(0.26);
+            const [resusRatio, setResusRatio] = useState(20);
+            const [resusConfig, setResusConfig] = useState(0.2);
+            const [observationRatio, setObservationRatio] = useState(25);
+            const [eicuRatioMethod, setEicuRatioMethod] = useState('total');
+            const [eicuTotalRatio, setEicuTotalRatio] = useState(1);
+            const [eicuResusRatio, setEicuResusRatio] = useState(50);
+
+            // --- Inpatient State ---
+            const [icuRatio, setIcuRatio] = useState(5);
+            const [nicuRatio, setNicuRatio] = useState(10);
+            const [obstetricsBeds, setObstetricsBeds] = useState(50);
+            const [ccuBeds, setCcuBeds] = useState(10);
+            const [bedsPerUnit, setBedsPerUnit] = useState(45);
+
+            // --- Area State ---
+            const [rooms, setRooms] = useState([{ id: 1, area: 20, count: 10 }]);
+            const [trafficCoeff, setTrafficCoeff] = useState(0.35);
+            const [wallCoeff, setWallCoeff] = useState(0.10);
+            const [wardUnitAreaStandard, setWardUnitAreaStandard] = useState(1650);
+
+            // --- Calculations ---
+            const dailyOutpatient = totalBeds * outpatientRatio;
+            const singleDocDailyCapacity = doctorHours * patientsPerHour;
+            const dailyEmergency = dailyOutpatient * (emergToOutpatientRatio / 100);
+            const emergencyRooms = dailyEmergency > 0 ? dailyEmergency / emergRoomCapacity : 0;
+            const emergencyEquip = (dailyEmergency / 1000) * drConfig;
+            const resusBeds = dailyEmergency * (resusRatio / 100) * resusConfig;
+            const obsBeds = dailyEmergency * (observationRatio / 100);
+            const eicuBeds = eicuRatioMethod === 'total' ? totalBeds * (eicuTotalRatio / 100) : resusBeds * (eicuResusRatio / 100);
+            const icuBedsCalc = totalBeds * (icuRatio / 100);
+            const nicuBedsCalc = obstetricsBeds * (nicuRatio / 100);
+            const totalSpecialBeds = eicuBeds + icuBedsCalc + nicuBedsCalc + ccuBeds;
+            const generalWardBeds = totalBeds - totalSpecialBeds;
+            const nursingUnits = generalWardBeds / bedsPerUnit;
+            const calculateDeptArea = () => {
+                let netArea = 0;
+                rooms.forEach(r => netArea += (r.area * r.count));
+                return netArea * (1 + trafficCoeff + wallCoeff);
+            };
+            const deptTotalArea = calculateDeptArea();
+            const wardTotalArea = nursingUnits * wardUnitAreaStandard;
+            const totalCoeff = 1 + trafficCoeff + wallCoeff;
+
+            // Handlers
+            const handleRoomChange = (id, field, val) => {
+                setRooms(rooms.map(r => r.id === id ? { ...r, [field]: parseFloat(val) || 0 } : r));
+            };
+            const addRoom = () => setRooms([...rooms, { id: Date.now(), area: 0, count: 0 }]);
+            const removeRoom = (id) => setRooms(rooms.filter(r => r.id !== id));
+
+            return (
+                <div className={`transition-colors duration-500 font-sans ${isDark ? 'dark' : ''}`}>
+                    {/* Background Blobs Layer */}
+                    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-slate-50 dark:bg-slate-950 transition-colors duration-500">
+                        {/* Top Right Blob */}
+                        <div className="absolute -top-[20%] -right-[10%] w-[800px] h-[800px] rounded-full bg-gradient-to-br from-purple-200/40 to-blue-200/40 dark:from-purple-900/20 dark:to-blue-900/20 blur-3xl opacity-70 animate-pulse-slow"></div>
+                        {/* Bottom Left Blob */}
+                        <div className="absolute top-[40%] -left-[10%] w-[600px] h-[600px] rounded-full bg-gradient-to-tr from-pink-200/40 to-orange-100/40 dark:from-pink-900/20 dark:to-orange-900/20 blur-3xl opacity-60"></div>
+                        {/* Center Blob */}
+                        <div className="absolute bottom-[10%] right-[20%] w-[500px] h-[500px] rounded-full bg-gradient-to-tl from-emerald-100/40 to-teal-100/40 dark:from-emerald-900/20 dark:to-teal-900/20 blur-3xl opacity-60"></div>
+                    </div>
+
+                    <div className="relative z-10 min-h-screen p-4 md:p-8 text-slate-800 dark:text-slate-100">
+                        <div className="max-w-7xl mx-auto">
+                        
+                        {/* Header */}
+                        <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                            <div className="flex-1">
+                                <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 mb-2 tracking-tight filter drop-shadow-sm">
+                                    医院规划测算计算器
+                                </h1>
+                                <p className="text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                                    Liquid Glass Design System • v2.0
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <div className="hidden md:block text-right">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-500 font-bold">Theme</div>
+                                </div>
+                                <ThemeToggle mode={themeMode} setMode={setThemeMode} />
+                            </div>
+                        </header>
+
+                        {/* Global Input Hero Card */}
+                        <GlassCard className="mb-8 p-1 bg-gradient-to-br from-white/40 to-white/10 dark:from-slate-800/40 dark:to-slate-900/10">
+                            <div className="p-6 md:p-8 flex flex-col md:flex-row items-center gap-8 relative">
+                                <div className="flex items-center gap-6 flex-1 z-10">
+                                    <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-xl shadow-blue-500/30">
+                                        <Building2 size={36} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-1">Core Parameter</label>
+                                        <div className="text-3xl font-black text-slate-800 dark:text-white">医院总床位数</div>
+                                        <div className="text-sm text-slate-500 dark:text-slate-400 mt-1 opacity-80">全院计算基础指标数据源</div>
+                                    </div>
+                                </div>
+                                <div className="w-full md:w-1/3 z-10">
+                                    <div className="relative group">
+                                        <input
+                                            type="number"
+                                            value={totalBeds}
+                                            onChange={(e) => setTotalBeds(parseFloat(e.target.value) || 0)}
+                                            className="w-full text-5xl font-black text-right text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400
+                                            border-b-2 border-slate-200 dark:border-slate-700 bg-transparent 
+                                            focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none py-2 transition-all 
+                                            placeholder-slate-300"
+                                        />
+                                        <span className="absolute right-0 -bottom-6 text-sm text-slate-400 dark:text-slate-500 font-medium">BEDS CAPACITY</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </GlassCard>
+
+                        {/* Navigation Tabs */}
+                        <div className="flex flex-wrap gap-3 mb-8 p-1.5 bg-white/30 dark:bg-black/20 backdrop-blur-md rounded-xl w-fit mx-auto md:mx-0 border border-white/20 dark:border-white/5">
+                            {[
+                                { id: 'outpatient', label: '门诊规模', icon: Users },
+                                { id: 'emergency', label: '急诊配置', icon: Activity },
+                                { id: 'inpatient', label: '住院病房', icon: Bed },
+                                { id: 'area', label: '建筑面积', icon: Layout },
+                            ].map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-300 ${
+                                    activeTab === tab.id
+                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 ring-1 ring-white/20'
+                                        : 'text-slate-600 dark:text-slate-400 hover:bg-white/40 dark:hover:bg-white/10'
+                                    }`}
+                                >
+                                    <tab.icon size={18} strokeWidth={2.5} />
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            {/* Main Content */}
+                            <div className="lg:col-span-8 space-y-8">
+                            
+                            {/* 1. OUTPATIENT TAB */}
+                            {activeTab === 'outpatient' && (
+                                <div className="space-y-6 animate-fadeIn">
+                                    <GlassCard className="p-6 md:p-8">
+                                        <SectionHeader icon={Users} title="门诊规模测算" description="日门诊量 = 总床位 × 诊床比" />
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 items-stretch">
+                                        <div className="space-y-4">
+                                            <InputGroup 
+                                            label="诊床比 (日门诊量/床位数)" 
+                                            value={outpatientRatio} 
+                                            onChange={setOutpatientRatio} 
+                                            hint="国标 3:1 | 热门地区 7:1 | 高端私立 1:1"
+                                            step={0.1}
+                                            />
+                                            <div className="p-4 rounded-xl bg-slate-50/50 dark:bg-slate-800/30 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm">
+                                            <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">💡 专家建议</div>
+                                            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">新建医院建议按 1.5-2.0 预留发展空间，避免初期空置。</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 p-6 text-white shadow-lg shadow-blue-500/20 flex flex-col justify-center">
+                                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                                            <Users size={120} />
+                                            </div>
+                                            <div className="relative z-10">
+                                            <div className="text-sm font-medium text-blue-100 mb-1">预估日门诊量 (Outpatient/Day)</div>
+                                            <div className="text-4xl font-black mb-2 tracking-tight">{dailyOutpatient.toLocaleString()} <span className="text-lg font-medium opacity-70">人次</span></div>
+                                            <div className="inline-flex items-center gap-1 bg-white/20 px-2 py-1 rounded text-[10px] font-mono backdrop-blur-md border border-white/20">
+                                                fx: 总床位数({totalBeds}) × 诊床比({outpatientRatio})
+                                            </div>
+                                            </div>
+                                        </div>
+                                        </div>
+
+                                        <div className="border-t border-slate-200/50 dark:border-slate-700/50 pt-6 mb-6">
+                                        <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2">
+                                            <span className="w-1.5 h-6 bg-blue-500 rounded-full"></span>
+                                            诊室效能设定
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                                            <InputGroup label="医生日均工作时长" value={doctorHours} onChange={setDoctorHours} unit="小时" />
+                                            <InputGroup label="每小时问诊效率" value={patientsPerHour} onChange={setPatientsPerHour} unit="人/小时" />
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100/50 dark:border-blue-800/30 flex items-center justify-between">
+                                            <span className="text-sm font-bold text-blue-800 dark:text-blue-300">单诊室日接诊能力</span>
+                                            <div className="text-right">
+                                            <span className="text-2xl font-black text-blue-600 dark:text-blue-400 mr-2">{singleDocDailyCapacity.toFixed(0)}</span>
+                                            <span className="text-xs text-blue-400 dark:text-blue-500">人次/间</span>
+                                            </div>
+                                        </div>
+                                        </div>
+
+                                        <div className="overflow-hidden rounded-xl border border-slate-200/50 dark:border-slate-700/50 shadow-sm">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50/80 dark:bg-slate-800/80 backdrop-blur text-slate-700 dark:text-slate-200 font-bold border-b border-slate-200/50 dark:border-slate-700/50">
+                                            <tr>
+                                                <th className="px-5 py-4">科室</th>
+                                                <th className="px-5 py-4">分科比例 (%)</th>
+                                                <th className="px-5 py-4">科室日门诊</th>
+                                                <th className="px-5 py-4">所需诊室</th>
+                                            </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 bg-white/40 dark:bg-slate-900/40">
+                                            {Object.entries(deptRatios).map(([key, ratio]) => {
+                                                const deptVol = dailyOutpatient * (ratio / 100);
+                                                const roomsNeeded = Math.ceil(deptVol / singleDocDailyCapacity);
+                                                const labels = { internal: '内科', surgery: '外科', obgyn: '妇科', pediatrics: '儿科', ent: '五官科' };
+                                                return (
+                                                <tr key={key} className="hover:bg-blue-50/30 dark:hover:bg-slate-800/50 transition-colors">
+                                                    <td className="px-5 py-3 font-medium text-slate-800 dark:text-slate-200">{labels[key]}</td>
+                                                    <td className="px-5 py-3">
+                                                    <input type="number" value={ratio} onChange={(e) => setDeptRatios({...deptRatios, [key]: parseFloat(e.target.value)})}
+                                                        className="w-16 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 text-center focus:ring-1 focus:ring-blue-500" />
+                                                    </td>
+                                                    <td className="px-5 py-3 font-mono text-slate-600 dark:text-slate-400">{deptVol.toFixed(0)}</td>
+                                                    <td className="px-5 py-3">
+                                                    <div className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-blue-100/50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-bold text-sm border border-blue-200/50 dark:border-blue-800/30">
+                                                        {roomsNeeded} <span className="text-[10px] ml-1 font-normal opacity-70">间</span>
+                                                    </div>
+                                                    </td>
+                                                </tr>
+                                                );
+                                            })}
+                                            </tbody>
+                                        </table>
+                                        </div>
+                                    </GlassCard>
+                                </div>
+                            )}
+
+                            {/* 2. EMERGENCY TAB */}
+                            {activeTab === 'emergency' && (
+                                <div className="space-y-6 animate-fadeIn">
+                                    <GlassCard className="p-6 md:p-8">
+                                        <SectionHeader icon={Activity} title="急诊资源配置" description="急诊量 = 日门诊量 × 急诊占比" />
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                        <InputGroup label="急诊占比 (急诊/日门诊)" value={emergToOutpatientRatio} onChange={setEmergToOutpatientRatio} unit="%" hint="通常约为 10%" />
+                                        <InputGroup label="单间急诊室日均承载" value={emergRoomCapacity} onChange={setEmergRoomCapacity} unit="人次" hint="用于推算诊室数量" />
+                                        </div>
+
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                                        <ResultBox label="日急诊量" value={dailyEmergency} subtext="人次" highlight formula={`门诊(${dailyOutpatient}) × ${emergToOutpatientRatio}%`} />
+                                        <ResultBox label="急诊诊室" value={Math.ceil(emergencyRooms)} subtext="间" formula={`急诊量 / 承载(${emergRoomCapacity})`} />
+                                        <ResultBox label="DR/CT配置" value={emergencyEquip} subtext="台" formula={`(急诊量/1000) × ${drConfig}`} />
+                                        <ResultBox label="总床位基数" value={totalBeds} subtext="张" formula="Global Input" />
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        {/* Left: Resuscitation */}
+                                        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-red-50/50 to-orange-50/50 dark:from-red-950/20 dark:to-orange-950/20 border border-red-100/50 dark:border-red-900/30 p-6">
+                                            <div className="absolute top-0 left-0 w-1.5 h-full bg-red-400/80"></div>
+                                            <h4 className="font-bold text-red-800 dark:text-red-300 flex items-center gap-2 mb-6">
+                                            <Stethoscope size={18} /> 抢救与留观资源
+                                            </h4>
+                                            
+                                            <div className="space-y-6">
+                                            <div>
+                                                <InputGroup label="抢救率 (抢救/急诊)" value={resusRatio} onChange={setResusRatio} unit="%" />
+                                                <InputGroup label="抢救床位配置系数" value={resusConfig} onChange={setResusConfig} step={0.01} />
+                                                <div className="mt-2 flex justify-between items-center p-3 rounded-lg bg-white/60 dark:bg-black/20 border border-red-100 dark:border-red-900/30">
+                                                <span className="text-sm text-red-700 dark:text-red-400 font-medium">抢救床需求</span>
+                                                <div className="text-right">
+                                                    <span className="text-2xl font-bold text-red-600 dark:text-red-400">{Math.ceil(resusBeds)} 张</span>
+                                                    <FormulaTag>急诊量 × {resusRatio}% × {resusConfig}</FormulaTag>
+                                                </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="h-px bg-red-200/50 dark:bg-red-800/30"></div>
+                                            
+                                            <div>
+                                                <InputGroup label="留观率 (留观/急诊)" value={observationRatio} onChange={setObservationRatio} unit="%" />
+                                                <div className="mt-2 flex justify-between items-center p-3 rounded-lg bg-white/60 dark:bg-black/20 border border-red-100 dark:border-red-900/30">
+                                                <span className="text-sm text-red-700 dark:text-red-400 font-medium">留观床需求</span>
+                                                <div className="text-right">
+                                                    <span className="text-2xl font-bold text-red-600 dark:text-red-400">{Math.ceil(obsBeds)} 张</span>
+                                                    <FormulaTag>急诊量 × {observationRatio}%</FormulaTag>
+                                                </div>
+                                                </div>
+                                            </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Right: EICU */}
+                                        <div className="rounded-2xl bg-white/40 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-700/50 p-6 backdrop-blur-sm">
+                                            <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center justify-between">
+                                            <span>EICU (急诊重症)</span>
+                                            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded text-slate-600 dark:text-slate-300">Intensive Care</span>
+                                            </h4>
+                                            
+                                            <div className="flex p-1 bg-slate-100/50 dark:bg-slate-900/50 rounded-lg mb-6">
+                                            <button onClick={() => setEicuRatioMethod('total')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${eicuRatioMethod === 'total' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-300' : 'text-slate-500 hover:text-slate-700'}`}>基于总床位</button>
+                                            <button onClick={() => setEicuRatioMethod('resus')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${eicuRatioMethod === 'resus' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-300' : 'text-slate-500 hover:text-slate-700'}`}>基于抢救床</button>
+                                            </div>
+
+                                            {eicuRatioMethod === 'total' ? (
+                                            <InputGroup label="配置比例 (占总床位)" value={eicuTotalRatio} onChange={setEicuTotalRatio} unit="%" hint="参考值: 1%" />
+                                            ) : (
+                                            <InputGroup label="配置比例 (占抢救床)" value={eicuResusRatio} onChange={setEicuResusRatio} unit="%" hint="EICU / 抢救量" />
+                                            )}
+
+                                            <div className="mt-8 p-6 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 border border-slate-200 dark:border-slate-700 text-center relative overflow-hidden group">
+                                            <div className="absolute inset-0 bg-blue-400/5 group-hover:bg-blue-400/10 transition-colors"></div>
+                                            <div className="relative z-10">
+                                                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">建议 EICU 床位数</div>
+                                                <div className="text-5xl font-black text-slate-800 dark:text-slate-100 mb-2">{Math.ceil(eicuBeds)}</div>
+                                                <FormulaTag>{eicuRatioMethod === 'total' ? `总床位(${totalBeds}) × ${eicuTotalRatio}%` : `抢救床(${Math.ceil(resusBeds)}) × ${eicuResusRatio}%`}</FormulaTag>
+                                                {Math.ceil(eicuBeds) < 6 && <div className="text-xs text-amber-600 mt-3 flex items-center justify-center gap-1 bg-amber-50 dark:bg-amber-900/30 p-1.5 rounded border border-amber-100 dark:border-amber-800/50">⚠️ 小于6张建议合并单元</div>}
+                                            </div>
+                                            </div>
+                                        </div>
+                                        </div>
+                                    </GlassCard>
+                                </div>
+                            )}
+
+                            {/* 3. INPATIENT TAB */}
+                            {activeTab === 'inpatient' && (
+                            <div className="space-y-6 animate-fadeIn">
+                                <GlassCard className="p-6 md:p-8">
+                                <SectionHeader icon={Bed} title="住院病房规划" description="普通床位 = 总床位 - (ICU + EICU + NICU...)" />
+                                
+                                <div className="p-6 rounded-2xl bg-gradient-to-br from-emerald-50/50 to-teal-50/50 dark:from-emerald-950/20 dark:to-teal-950/20 border border-emerald-100/50 dark:border-emerald-900/30 mb-8">
+                                    <h3 className="font-bold text-emerald-800 dark:text-emerald-400 mb-6 flex items-center gap-2">
+                                    <span className="p-1.5 bg-emerald-200/50 dark:bg-emerald-900/50 rounded-lg text-emerald-700 dark:text-emerald-300"><Calculator size={16}/></span>
+                                    特需/重症床位扣除项 (Special Care Deduction)
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                                    <div className="space-y-2">
+                                        <InputGroup label="ICU 配置比例" value={icuRatio} onChange={setIcuRatio} unit="%" hint="通常 3-5%" />
+                                        <div className="flex items-center justify-between px-4 py-2 bg-white/50 dark:bg-black/20 rounded-lg border border-emerald-100/50 dark:border-emerald-900/30">
+                                        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">ICU 结果</span>
+                                        <span className="font-mono font-bold text-emerald-800 dark:text-emerald-300">{Math.ceil(icuBedsCalc)} 张</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <div className="flex gap-2">
+                                        <div className="flex-1"><InputGroup label="NICU 产科基数" value={obstetricsBeds} onChange={setObstetricsBeds} unit="张" /></div>
+                                        <div className="w-24"><InputGroup label="重症率" value={nicuRatio} onChange={setNicuRatio} unit="%" /></div>
+                                        </div>
+                                        <div className="flex items-center justify-between px-4 py-2 bg-white/50 dark:bg-black/20 rounded-lg border border-emerald-100/50 dark:border-emerald-900/30">
+                                        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">NICU 结果</span>
+                                        <span className="font-mono font-bold text-emerald-800 dark:text-emerald-300">{Math.ceil(nicuBedsCalc)} 张</span>
+                                        </div>
+                                    </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col md:flex-row gap-6 items-stretch">
+                                    <div className="flex-1 bg-slate-50/50 dark:bg-slate-800/30 p-6 rounded-2xl border border-slate-200/50 dark:border-slate-700/50">
+                                    <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-4 text-sm uppercase">Parameter</h4>
+                                    <InputGroup label="标准护理单元床位数" value={bedsPerUnit} onChange={setBedsPerUnit} unit="床/单元" hint="公立: 40-50 | 高端: 25-30" />
+                                    </div>
+                                    
+                                    <div className="flex-none flex items-center justify-center text-slate-300 dark:text-slate-600">
+                                    <ArrowRight size={32} className="hidden md:block opacity-50"/>
+                                    </div>
+
+                                    <div className="flex-1 relative overflow-hidden bg-slate-800 dark:bg-slate-900 text-white p-6 rounded-2xl shadow-xl flex flex-col justify-between group">
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full blur-[60px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                                    
+                                    <div className="relative z-10">
+                                        <div className="flex justify-between items-center mb-2">
+                                        <span className="text-sm text-slate-300">扣除后普通床位</span>
+                                        <span className="font-bold text-xl">{Math.floor(generalWardBeds)} <span className="text-sm font-normal text-slate-400">张</span></span>
+                                        </div>
+                                        <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2 overflow-hidden">
+                                        <div className="bg-gradient-to-r from-blue-400 to-indigo-400 h-1.5 rounded-full" style={{ width: `${(generalWardBeds/totalBeds)*100}%` }}></div>
+                                        </div>
+                                        <div className="text-[10px] text-slate-400 font-mono">Formula: Total - (Special Beds)</div>
+                                    </div>
+
+                                    <div className="relative z-10 mt-6 pt-4 border-t border-slate-700">
+                                        <div className="text-xs text-blue-300 uppercase mb-1 font-bold">最终规划结果 (Result)</div>
+                                        <div className="flex justify-between items-baseline">
+                                            <span className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white">{nursingUnits.toFixed(1)}</span>
+                                            <span className="text-sm text-slate-300 font-normal">个护理单元 (Units)</span>
+                                        </div>
+                                    </div>
+                                    </div>
+                                </div>
+                                </GlassCard>
+                            </div>
+                            )}
+
+                            {/* 4. AREA TAB */}
+                            {activeTab === 'area' && (
+                            <div className="space-y-6 animate-fadeIn">
+                            <GlassCard className="p-6 md:p-8">
+                                <SectionHeader icon={Layout} title="面积空间规划" description="总面积 = 净面积 × (1 + 交通系数 + 墙体系数)" />
+                                
+                                <div className="p-6 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100/50 dark:border-amber-900/30 mb-8 backdrop-blur-sm">
+                                <h3 className="font-bold text-amber-800 dark:text-amber-400 mb-4 text-sm uppercase flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-amber-500"></span> 系数设定 (K Factor)
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <InputGroup label="交通面积系数 (Y1t)" value={trafficCoeff} onChange={setTrafficCoeff} step={0.01} hint="走廊、候诊等，通常较大" />
+                                    <InputGroup label="墙体面积系数 (Y2t)" value={wallCoeff} onChange={setWallCoeff} step={0.01} hint="结构墙体，通常10-11%" />
+                                </div>
+                                <div className="flex justify-end items-center gap-3 border-t border-amber-200/50 dark:border-amber-800/30 pt-4 mt-2">
+                                    <span className="text-sm text-amber-800 dark:text-amber-500 font-medium">总转换系数 K:</span>
+                                    <span className="text-lg font-black text-amber-900 dark:text-amber-400 bg-white/50 dark:bg-black/20 px-3 py-1 rounded-lg border border-amber-200/50 dark:border-amber-800/50">{totalCoeff.toFixed(2)}</span>
+                                    <span className="text-[10px] font-mono text-amber-700 dark:text-amber-600">1 + {trafficCoeff} + {wallCoeff}</span>
+                                </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    {/* Module 1: Department Calculator */}
+                                    <div className="flex flex-col bg-white/40 dark:bg-slate-800/40 rounded-xl border border-slate-200/50 dark:border-slate-700/50 overflow-hidden shadow-sm backdrop-blur-sm">
+                                    <div className="p-4 border-b border-slate-200/50 dark:border-slate-700/50 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
+                                        <h4 className="font-bold text-slate-700 dark:text-slate-200">单一科室测算</h4>
+                                        <button onClick={addRoom} className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 px-3 py-1.5 rounded-full font-bold hover:bg-blue-200 dark:hover:bg-blue-800/40 transition-colors shadow-sm">
+                                        + Add Room
+                                        </button>
+                                    </div>
+                                    <div className="p-4 space-y-3 flex-1 overflow-y-auto max-h-[300px]">
+                                        {rooms.map((room, idx) => (
+                                        <div key={room.id} className="flex gap-2 items-center bg-white/60 dark:bg-slate-900/60 p-2 rounded-lg border border-slate-100 dark:border-slate-700/50 shadow-sm group hover:border-blue-200 dark:hover:border-blue-800 transition-colors">
+                                            <span className="text-[10px] font-mono text-slate-400 w-5">0{idx + 1}</span>
+                                            <div className="flex-1">
+                                            <input type="number" placeholder="Area" value={room.area} onChange={(e) => handleRoomChange(room.id, 'area', e.target.value)}
+                                                className="w-full bg-transparent border-b border-slate-200 dark:border-slate-700 text-sm py-1 focus:outline-none focus:border-blue-500 text-slate-800 dark:text-slate-200 font-medium" />
+                                            <div className="text-[9px] text-slate-400 uppercase tracking-wide">Area (m²)</div>
+                                            </div>
+                                            <span className="text-slate-300 text-sm">×</span>
+                                            <div className="w-16">
+                                            <input type="number" placeholder="Qty" value={room.count} onChange={(e) => handleRoomChange(room.id, 'count', e.target.value)}
+                                                className="w-full bg-transparent border-b border-slate-200 dark:border-slate-700 text-sm py-1 focus:outline-none focus:border-blue-500 text-center text-slate-800 dark:text-slate-200 font-medium" />
+                                            <div className="text-[9px] text-slate-400 uppercase tracking-wide text-center">Qty</div>
+                                            </div>
+                                            <button onClick={() => removeRoom(room.id)} className="text-slate-300 hover:text-red-500 p-1.5 transition-colors"><X size={14}/></button>
+                                        </div>
+                                        ))}
+                                    </div>
+                                    <div className="p-5 bg-gradient-to-t from-slate-100 to-white dark:from-slate-900 dark:to-slate-800 border-t border-slate-200/50 dark:border-slate-700/50">
+                                        <div className="flex justify-between items-end mb-1">
+                                        <span className="text-sm font-bold text-slate-600 dark:text-slate-400">总建筑面积 (GFA)</span>
+                                        <span className="font-black text-2xl text-slate-800 dark:text-white">{deptTotalArea.toFixed(0)} <span className="text-sm font-normal text-slate-400">m²</span></span>
+                                        </div>
+                                        <div className="text-right">
+                                        <FormulaTag>∑(Area×Qty) × K({totalCoeff.toFixed(2)})</FormulaTag>
+                                        </div>
+                                    </div>
+                                    </div>
+
+                                    {/* Module 2: Ward Area */}
+                                    <div className="rounded-xl border border-slate-200/50 dark:border-slate-700/50 bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm p-6 flex flex-col justify-between shadow-sm">
+                                    <div>
+                                        <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-6">住院病区总面积</h4>
+                                        <InputGroup label="标准病房单元建筑面积" value={wardUnitAreaStandard} onChange={setWardUnitAreaStandard} unit="m²" hint="含走廊及辅助用房的整层面积" />
+                                    </div>
+                                    <div className="mt-8 pt-6 border-t border-slate-200/50 dark:border-slate-700/50">
+                                        <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 mb-2">
+                                        <Info size={14}/>
+                                        <span>基于 {nursingUnits.toFixed(1)} 个护理单元</span>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/20">
+                                        <div className="text-xs text-blue-100 uppercase font-bold mb-1">Total Ward Area</div>
+                                        <div className="flex justify-between items-end">
+                                            <span className="font-black text-3xl">{wardTotalArea.toLocaleString()} <span className="text-lg font-medium opacity-80">m²</span></span>
+                                        </div>
+                                        </div>
+                                        <div className="text-right mt-2">
+                                        <FormulaTag>单元面积({wardUnitAreaStandard}) × 单元数({nursingUnits.toFixed(1)})</FormulaTag>
+                                        </div>
+                                    </div>
+                                    </div>
+                                </div>
+
+                            </GlassCard>
+                            </div>
+                            )}
+
+                            </div>
+
+                            {/* Sidebar Summary */}
+                            <div className="lg:col-span-4">
+                            <div className="sticky top-8 space-y-6">
+                                <GlassCard className="p-0 border-0 bg-slate-900 dark:bg-black/60 text-white shadow-2xl">
+                                <div className="p-6 border-b border-slate-700/50 bg-gradient-to-r from-slate-800 to-slate-900 dark:from-slate-900 dark:to-black">
+                                    <h3 className="text-lg font-bold flex items-center gap-2 text-blue-400">
+                                        <Activity size={20} className="animate-pulse" /> 
+                                        Dashboard
+                                    </h3>
+                                </div>
+                                <div className="p-6 space-y-6">
+                                    <div className="flex justify-between items-center pb-4 border-b border-slate-700/50">
+                                        <span className="text-slate-400 text-sm font-medium">总床位数</span>
+                                        <span className="font-black text-2xl tracking-tight">{totalBeds}</span>
+                                    </div>
+                                    
+                                    <div className="space-y-4">
+                                        <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-slate-400 text-xs uppercase font-bold">每日门诊 (OPD)</span>
+                                            <span className="font-mono text-lg font-bold text-blue-300">{dailyOutpatient.toLocaleString()}</span>
+                                        </div>
+                                        <div className="w-full bg-slate-700 h-1 rounded-full overflow-hidden">
+                                            <div className="bg-blue-500 h-1 rounded-full w-3/4"></div>
+                                        </div>
+                                        </div>
+                                        
+                                        <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="text-slate-400 text-xs uppercase font-bold">每日急诊 (ER)</span>
+                                            <span className="font-mono text-lg font-bold text-orange-300">{dailyEmergency.toFixed(0)}</span>
+                                        </div>
+                                        <div className="w-full bg-slate-700 h-1 rounded-full overflow-hidden">
+                                            <div className="bg-orange-500 h-1 rounded-full w-1/4"></div>
+                                        </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-2">
+                                        <div className="text-[10px] text-slate-500 mb-3 uppercase tracking-widest font-bold">Beds Distribution</div>
+                                        <div className="space-y-3 font-mono text-sm">
+                                        <div className="flex justify-between items-center">
+                                            <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500"></div>普通病房</span>
+                                            <span className="text-emerald-400 font-bold">{Math.floor(generalWardBeds)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500"></div>ICU/特需</span>
+                                            <span className="text-amber-400 font-bold">{Math.ceil(totalSpecialBeds)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div>急诊EICU</span>
+                                            <span className="text-blue-400 font-bold">{Math.ceil(eicuBeds)}</span>
+                                        </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-slate-950/50 text-[10px] text-slate-500 text-center font-mono">
+                                    AUTO CALCULATED • REALTIME
+                                </div>
+                                </GlassCard>
+
+                                <div className="p-5 rounded-2xl bg-white/40 dark:bg-slate-800/40 border border-white/40 dark:border-slate-700/50 backdrop-blur-sm shadow-sm">
+                                <h4 className="font-bold text-slate-700 dark:text-slate-300 mb-3 text-xs uppercase flex items-center gap-2">
+                                    <Check size={14} className="text-green-500"/> System Status
+                                </h4>
+                                <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed space-y-2">
+                                    <p>• 界面风格: Liquid Glass v2.0 (HTML Port)</p>
+                                    <p>• 当前模式: <span className="font-bold text-blue-600 dark:text-blue-400 capitalize">{themeMode}</span></p>
+                                    <p>• 公式追踪: <span className="text-green-600 dark:text-green-400">Active</span></p>
+                                </div>
+                                </div>
+                            </div>
+                            </div>
+
+                        </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
